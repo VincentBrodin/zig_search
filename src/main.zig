@@ -28,5 +28,5 @@ pub fn main() !void {
     const maze = try Maze.init(fileContent, alloc);
     defer maze.deinit();
     maze.print();
-    _ = maze.solve();
+    _ = try maze.solve();
 }

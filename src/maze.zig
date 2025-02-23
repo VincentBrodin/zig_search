@@ -200,7 +200,7 @@ pub const Maze = struct {
         // Trace path
         var currentNode: ?*Node = from;
         while (currentNode != null and !currentNode.?.isStart) {
-            map[currentNode.?.y][currentNode.?.x] = 'o';
+            map[currentNode.?.y][currentNode.?.x] = 'x';
             currentNode = currentNode.?.cameFrom;
         }
 
@@ -258,6 +258,9 @@ pub const Maze = struct {
                         }
                     }
                 }
+            } else {
+                std.debug.print("Could not solve\n", .{});
+                return false;
             }
             std.debug.print("Solved in {} moves\n", .{count});
 

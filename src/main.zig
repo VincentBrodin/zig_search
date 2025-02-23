@@ -28,5 +28,6 @@ pub fn main() !void {
     const maze = try Maze.init(fileContent, alloc);
     defer maze.deinit();
     maze.print();
-    _ = try maze.solve();
+    const solved = try maze.solve();
+    std.debug.print("Is solved: {}\n", .{solved});
 }

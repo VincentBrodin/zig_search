@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const QueueError = error{
-    QueueEmpty,
+const StackError = error{
+    StackEmpty,
 };
 
-pub fn Queue(comptime T: type) type {
+pub fn Stack(comptime T: type) type {
     return struct {
         len: usize,
         allocator: std.mem.Allocator,
@@ -18,9 +18,9 @@ pub fn Queue(comptime T: type) type {
             };
         }
 
-        pub fn init(allocator: std.mem.Allocator) !*Queue(T) {
-            const queue = try allocator.create(Queue(T));
-            queue.* = Queue(T){
+        pub fn init(allocator: std.mem.Allocator) !*Stack(T) {
+            const queue = try allocator.create(Stack(T));
+            queue.* = Stack(T){
                 .len = 0,
                 .allocator = allocator,
                 .head = null,
@@ -29,7 +29,7 @@ pub fn Queue(comptime T: type) type {
             return queue;
         }
 
-        pub fn deinit(self: *Queue(T)) void {
+        pub fn deinit(self: *Stack(T)) void {
             var current = self.head;
             while (current != null) {
                 const temp = current.?.next;
@@ -39,7 +39,7 @@ pub fn Queue(comptime T: type) type {
             self.allocator.destroy(self);
         }
 
-        pub fn enqueue(self: *Queue(T), val: *T) !void {
+        pub fn enqueue(self: *Stack(T), val: *T) !void {
             const node = try self.allocator.create(Node(T));
             node.* = Node(T){
                 .next = null,
@@ -52,14 +52,14 @@ pub fn Queue(comptime T: type) type {
                 self.head = node;
                 self.tail = node;
             } else {
-                self.tail.?.next = node;
-                self.tail = node;
+                node.next = self.head;
+                self.head = node;
             }
         }
 
-        pub fn dequeue(self: *Queue(T)) !*T {
-            if (self.head == null or self.tail == null) {
-                return QueueError.QueueEmpty;
+        pub fn dequeue(self: *Stack(T)) !*T {
+            if (self.head == null) {
+                return StackError.StackEmpty;
             }
 
             const val = self.head.?.val;
@@ -78,9 +78,9 @@ pub fn Queue(comptime T: type) type {
             return val;
         }
 
-        pub fn peek(self: *Queue(T)) !*T {
+        pub fn peek(self: *Stack(T)) !*T {
             if (self.head == null) {
-                return QueueError.QueueEmpty;
+                return StackError.StackEmpty;
             }
 
             return self.head.?.val;

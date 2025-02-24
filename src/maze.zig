@@ -8,6 +8,7 @@ const MazeError = error{
 
 pub const Maze = struct {
     map: [][]Node = undefined,
+    solved: [][]u8 = undefined,
     allocator: std.mem.Allocator,
     queue: *Queue,
 
@@ -43,6 +44,7 @@ pub const Maze = struct {
 
         // Allocate
         maze.map = try allocator.alloc([]Node, totalRows);
+        maze.solved = try allocator.alloc([]u8, totalRows);
 
         iter.reset();
         var currentRow: usize = 0;
@@ -50,9 +52,13 @@ pub const Maze = struct {
         var hasGoal = false;
         while (iter.next()) |line| : (currentRow += 1) {
             const size = line.len - 1;
+
             maze.map[currentRow] = try allocator.alloc(Node, size);
+            maze.solved[currentRow] = try allocator.alloc(u8, size);
+
             for (0..size) |i| {
                 const c = line[i];
+                maze.solved[currentRow][i] = c;
                 const node = &maze.map[currentRow][i];
                 node.* = Node{
                     // State
@@ -86,14 +92,22 @@ pub const Maze = struct {
 
     pub fn deinit(self: *Maze) void {
         self.queue.deinit();
+
         for (self.map) |row| {
             self.allocator.free(row);
         }
         self.allocator.free(self.map);
+
+        for (self.solved) |row| {
+            self.allocator.free(row);
+        }
+        self.allocator.free(self.solved);
+
         self.allocator.destroy(self);
     }
 
-    pub fn findNeighbour(self: *Maze, node: *Node) ![]*Node {
+    const Neighbours = std.meta.Tuple(&.{ []*Node, usize });
+    pub fn findNeighbour(self: *Maze, node: *Node) !Neighbours {
         const nodes = try self.allocator.alloc(*Node, 4);
         var i: usize = 0;
 
@@ -114,9 +128,10 @@ pub const Maze = struct {
             i += 1;
         }
 
-        return nodes[0..i];
+        return .{ nodes, i };
     }
     fn nodeUp(self: *Maze, node: *Node) ?*Node {
+        if (node.y == 0) return null;
         const x = node.x;
         const y = node.y - 1;
 
@@ -135,6 +150,7 @@ pub const Maze = struct {
         return null;
     }
     fn nodeLeft(self: *Maze, node: *Node) ?*Node {
+        if (node.x == 0) return null;
         const x = node.x - 1;
         const y = node.y;
 
@@ -169,48 +185,17 @@ pub const Maze = struct {
         }
     }
 
-    pub fn printPath(self: *Maze, from: *Node) !void {
-        const map = try self.allocator.alloc([]u8, self.map.len);
-        for (0..self.map.len) |i| {
-            map[i] = try self.allocator.alloc(u8, self.map[i].len);
-        }
-        defer {
-            for (map) |row| {
-                self.allocator.free(row);
-            }
-            self.allocator.free(map);
-        }
-
-        // Setup base state
-        for (map, 0..) |row, y| {
-            for (row, 0..) |*c, x| {
-                const node = &self.map[y][x];
-                if (node.isWall) {
-                    c.* = '#';
-                } else if (node.isStart) {
-                    c.* = 's';
-                } else if (node.isGoal) {
-                    c.* = 'g';
-                } else {
-                    c.* = ' ';
-                }
-            }
-        }
-
-        // Trace path
+    fn tracePath(self: *Maze, from: *Node) [][]u8 {
         var currentNode: ?*Node = from;
         while (currentNode != null and !currentNode.?.isStart) {
-            map[currentNode.?.y][currentNode.?.x] = 'x';
+            self.solved[currentNode.?.y][currentNode.?.x] = '.';
             currentNode = currentNode.?.cameFrom;
         }
 
-        // print
-        for (map) |row| {
-            std.debug.print("{s}\n", .{row});
-        }
+        return self.solved;
     }
 
-    pub fn solve(self: *Maze) !bool {
+    pub fn solve(self: *Maze) !?[][]u8 {
         var startNode: *Node = undefined;
         for (self.map) |row| {
             for (row) |*node| {
@@ -226,46 +211,44 @@ pub const Maze = struct {
             const neighbours = try self.findNeighbour(startNode);
             startNode.print();
             std.debug.print("\n", .{});
-            for (neighbours) |node| {
+            for (0..neighbours[1]) |i| {
+                const node: *Node = neighbours[0][i];
                 if (!node.isWall and !node.visited) {
                     node.cameFrom = startNode;
                     node.visited = true;
                     try self.queue.enqueue(node);
                 }
             }
-            self.allocator.free(neighbours);
+            self.allocator.free(neighbours[0]);
         }
 
-        {
-            var count: usize = 0;
-            var currentNode: *Node = undefined;
-            search: while (self.queue.len > 0) : (count += 1) {
-                // Update the current node
-                currentNode = try self.queue.dequeue();
-                // Grab neighbours
-                const neighbours = try self.findNeighbour(currentNode);
-                defer self.allocator.free(neighbours);
-
-                // Loop thorugh neighbours and add the valid ones to the queue
-                for (neighbours) |node| {
-                    if (!node.isWall and !node.visited) {
-                        node.cameFrom = currentNode;
-                        node.visited = true;
-                        try self.queue.enqueue(node);
-                        if (node.isGoal) {
-                            std.debug.print("Found goal\n", .{});
-                            break :search;
-                        }
-                    }
+        var count: usize = 0;
+        var currentNode: *Node = startNode;
+        search: while (self.queue.len != 0) : (count += 1) {
+            currentNode = try self.queue.dequeue();
+            // Grab neighbours
+            const neighbours = try self.findNeighbour(currentNode);
+            defer self.allocator.free(neighbours[0]);
+            // Loop thorugh neighbours and add the valid ones to the queue
+            for (0..neighbours[1]) |i| {
+                const node: *Node = neighbours[0][i];
+                // Node is not valid to search
+                if (node.isWall or node.visited or node.isStart) {
+                    continue;
                 }
-            } else {
-                std.debug.print("Could not solve\n", .{});
-                return false;
+                node.visited = true;
+                node.cameFrom = currentNode;
+                if (node.isGoal) {
+                    break :search;
+                }
+                try self.queue.enqueue(node);
             }
-            std.debug.print("Solved in {} moves\n", .{count});
-
-            try self.printPath(currentNode);
+        } else {
+            // Could not solve
+            return null;
         }
-        return true;
+
+        // Trace the path
+        return self.tracePath(currentNode);
     }
 };

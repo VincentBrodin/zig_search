@@ -20,14 +20,32 @@ pub fn main() !void {
     defer argIter.deinit();
     _ = argIter.skip();
     const path = argIter.next() orelse return AppError.NoArgs;
+    const out: ?([:0]const u8) = argIter.next();
 
     // Read file
     const fileContent = try helper.readFile(fs.cwd(), path, alloc);
     defer alloc.free(fileContent);
 
+    // Solve the maze
+    const start = try std.time.Instant.now();
+
     const maze = try Maze.init(fileContent, alloc);
     defer maze.deinit();
-    maze.print();
-    const solved = try maze.solve();
-    std.debug.print("Is solved: {}\n", .{solved});
+    const solvedMaze = try maze.solve();
+
+    const end = try std.time.Instant.now();
+    const diff_ns = end.since(start);
+    const diff_ms = diff_ns / 1_000_000;
+    if (solvedMaze == null) {
+        std.debug.print("Failed to solve maze in {} ms\n", .{diff_ms});
+    } else {
+        if (out == null) {
+            for (solvedMaze.?) |row| {
+                std.debug.print("{s}\n", .{row});
+            }
+        } else {
+            try helper.writeFile(fs.cwd(), out.?, solvedMaze.?, alloc);
+        }
+        std.debug.print("Solved in: {} ms\n", .{diff_ms});
+    }
 }
